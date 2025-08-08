@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "HackerVision"
 include(":app")
- 
+include(":opencv")
