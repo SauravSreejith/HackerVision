@@ -1,3 +1,5 @@
+// app/src/main/java/com/hackathon/hackervision/MainActivity.kt
+
 package com.hackathon.hackervision
 
 import android.Manifest
@@ -12,10 +14,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import org.opencv.android.BaseLoaderCallback
+// The import for BaseLoaderCallback is no longer needed
+// import org.opencv.android.BaseLoaderCallback
 import org.opencv.android.CameraBridgeViewBase
-import org.opencv.android.LoaderCallbackInterface
-import org.opencv.android.OpenCVLoaderCallback
+// The import for LoaderCallbackInterface is no longer needed
+// import org.opencv.android.LoaderCallbackInterface
+import org.opencv.android.OpenCVLoader
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -28,11 +32,14 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
         private const val TAG = "HackerVision"
         private const val CAMERA_PERMISSION_REQUEST = 200
 
+        // This static block is now the ONLY thing needed for initialization.
+        // It's executed once when the class is loaded.
         init {
-            if (!OpenCVLoaderCallback.initDebug()) {
-                Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization")
-            } else {
+            if (OpenCVLoader.initDebug()) {
                 Log.d(TAG, "OpenCV library found inside package. Using it!")
+            } else {
+                Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization")
+                // Note: The 'else' block will likely not be reached if your :opencv module is set up correctly.
             }
         }
     }
@@ -51,6 +58,9 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
     private lateinit var cannyMat: Mat
     private lateinit var displayMat: Mat
 
+    // --- REMOVED ---
+    // The BaseLoaderCallback is no longer necessary with static initialization.
+    /*
     private val loaderCallback = object : BaseLoaderCallback(this) {
         override fun onManagerConnected(status: Int) {
             when (status) {
@@ -64,31 +74,29 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
             }
         }
     }
+    */
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Keep screen on and hide navigation
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
 
         setContentView(R.layout.activity_main)
 
-        // Initialize views
         cameraView = findViewById(R.id.camera_view)
         scanDepthSeekBar = findViewById(R.id.scan_depth_seekbar)
         scanDepthLabel = findViewById(R.id.scan_depth_label)
 
-        // Setup camera view
         cameraView.visibility = SurfaceView.VISIBLE
         cameraView.setCvCameraViewListener(this)
 
-        // Setup seek bar for scan depth control
         setupScanDepthControl()
 
-        // Check camera permission
         if (checkCameraPermission()) {
-            enableCamera()
+            // Since OpenCV is loaded statically, we can enable the view directly
+            // after the permission check.
+            cameraView.enableView()
         } else {
             requestCameraPermission()
         }
@@ -96,7 +104,7 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
 
     private fun setupScanDepthControl() {
         scanDepthSeekBar.max = 100
-        scanDepthSeekBar.progress = 33 // Start at medium sensitivity
+        scanDepthSeekBar.progress = 33
 
         scanDepthSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -106,19 +114,13 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
-        // Set initial values
         updateScanDepth(33)
     }
 
     private fun updateScanDepth(progress: Int) {
-        // Map seekbar progress (0-100) to Canny thresholds
         val sensitivity = progress / 100.0
-
-        // Invert the relationship for more intuitive control
         lowThreshold = 20.0 + (180.0 * (1.0 - sensitivity))
         highThreshold = lowThreshold * 2.5
-
-        // Update label
         val detailLevel = when {
             progress < 25 -> "ARCHITECTURAL"
             progress < 50 -> "STRUCTURAL"
@@ -145,6 +147,8 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
     private fun enableCamera() {
         if (::cameraView.isInitialized) {
             cameraView.setCameraPermissionGranted()
+            // Enable the view here after permission is granted.
+            cameraView.enableView()
         }
     }
 
@@ -154,7 +158,6 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
         if (requestCode == CAMERA_PERMISSION_REQUEST) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 enableCamera()
@@ -165,12 +168,21 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
         }
     }
 
+    // --- MODIFIED ---
+    // The onResume method is simplified. We no longer need to call initAsync.
+    // The camera view is enabled here to ensure it's active when the app comes to the foreground.
     override fun onResume() {
         super.onResume()
-        if (!OpenCVLoaderCallback.initDebug()) {
-            OpenCVLoaderCallback.initAsync(OpenCVLoaderCallback.OPENCV_VERSION, this, loaderCallback)
+        if (!OpenCVLoader.initDebug()) {
+            Log.e(TAG, "OpenCV failed to load!")
         } else {
-            loaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS)
+            Log.d(TAG, "OpenCV library found, attempting to enable camera view.")
+            if (checkCameraPermission()) {
+                // Be explicit about which camera to use
+                cameraView.setCameraIndex(CameraBridgeViewBase.CAMERA_ID_BACK)
+                cameraView.setMaxFrameSize(1280, 720)
+                cameraView.enableView()
+            }
         }
     }
 
@@ -188,9 +200,11 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
         }
     }
 
+    // CameraBridgeViewBase.CvCameraViewListener2 implementations (NO CHANGES HERE)
     // CameraBridgeViewBase.CvCameraViewListener2 implementations
 
     override fun onCameraViewStarted(width: Int, height: Int) {
+        Log.d(TAG, "SUCCESS: onCameraViewStarted is called. Frame size: ${width}x${height}")
         rgbaMat = Mat(height, width, CvType.CV_8UC4)
         grayMat = Mat(height, width, CvType.CV_8UC1)
         cannyMat = Mat(height, width, CvType.CV_8UC1)
@@ -198,6 +212,7 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
     }
 
     override fun onCameraViewStopped() {
+        Log.d(TAG, "onCameraViewStopped is called.")
         if (::rgbaMat.isInitialized) rgbaMat.release()
         if (::grayMat.isInitialized) grayMat.release()
         if (::cannyMat.isInitialized) cannyMat.release()
@@ -205,60 +220,47 @@ class MainActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraViewListe
     }
 
     override fun onCameraFrame(inputFrame: CameraBridgeViewBase.CvCameraViewFrame): Mat {
+        // Get the current camera frame
         rgbaMat = inputFrame.rgba()
 
-        // Convert to grayscale for Canny edge detection
+        // Convert to grayscale for edge detection
         Imgproc.cvtColor(rgbaMat, grayMat, Imgproc.COLOR_RGBA2GRAY)
 
-        // Apply Gaussian blur to reduce noise
+        // Apply a slight blur to reduce noise
         Imgproc.GaussianBlur(grayMat, grayMat, org.opencv.core.Size(3.0, 3.0), 0.0)
 
-        // Apply Canny edge detection with current thresholds
+        // Perform Canny edge detection
         Imgproc.Canny(grayMat, cannyMat, lowThreshold, highThreshold)
 
-        // Create the HackerVision effect
+        // Use the edge data to create the final visual effect
         createHackerVisionEffect()
 
+        // Return the final, modified frame to be displayed on screen
         return displayMat
     }
 
     private fun createHackerVisionEffect() {
-        // Create black canvas (void background)
         displayMat.setTo(Scalar(0.0, 0.0, 0.0, 255.0))
-
-        // Convert single-channel Canny result to RGBA
         val cannyRgba = Mat()
         Imgproc.cvtColor(cannyMat, cannyRgba, Imgproc.COLOR_GRAY2RGBA)
-
-        // Create phosphor green mask where edges exist
         val mask = Mat()
         Core.inRange(cannyRgba, Scalar(255.0, 255.0, 255.0, 255.0), Scalar(255.0, 255.0, 255.0, 255.0), mask)
-
-        // Apply phosphor green color (0, 255, 0) to edge pixels
         displayMat.setTo(Scalar(0.0, 255.0, 0.0, 255.0), mask)
-
-        // Add subtle scanline effect for retro monitor feel
         addScanlineEffect()
-
-        // Clean up
         cannyRgba.release()
         mask.release()
     }
 
     private fun addScanlineEffect() {
-        // Add subtle horizontal scanlines every 4 pixels
         val rows = displayMat.rows()
         val scanlineMat = Mat.zeros(displayMat.size(), displayMat.type())
-
         for (y in 0 until rows step 4) {
             if (y < rows) {
                 val roi = scanlineMat.submat(y, y + 1, 0, displayMat.cols())
-                roi.setTo(Scalar(0.0, 80.0, 0.0, 30.0)) // Very subtle green scanlines
+                roi.setTo(Scalar(0.0, 80.0, 0.0, 30.0))
                 roi.release()
             }
         }
-
-        // Blend scanlines with the main image
         Core.add(displayMat, scanlineMat, displayMat)
         scanlineMat.release()
     }
